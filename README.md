@@ -1,7 +1,7 @@
 # Parallax
 
 
-<img src="https://developers.google.com/web/updates/images/2016/12/performant-parallaxing/parallax.jpg">
+<img width=200px src="https://developers.google.com/web/updates/images/2016/12/performant-parallaxing/parallax.jpg">
 
 A module-system for an imaginary language.
 
