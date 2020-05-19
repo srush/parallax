@@ -1,4 +1,4 @@
-# Parallax - Pure modules with less magic
+# Parallax - Immutable modules for Pytorch and Friends
 
 A pure module system for a deep imaginary language.
 
