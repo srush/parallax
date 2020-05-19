@@ -12,9 +12,7 @@ immutable modules for PyTorch.
 
 Why you would want immutable modules for PyTorch? Well they are
 pretty concise, they make randomness and effects explicit, and they have
-stronger types.
-
-(Honestly though, I just want someone on the internet to port this to JAX for me.)
+stronger types. (Honestly though, I just want someone on the internet to port this to JAX for me.)
 
 Main ideas:
 
