@@ -1,13 +1,12 @@
 # Parallax
 
-A module-system for an imaginary language.
+A pure module-system for a deep imaginary language.
 
 
 <img width=450px src="https://developers.google.com/web/updates/images/2016/12/performant-parallaxing/parallax.jpg">
 
 
-Parallax is a prototype for a module system for a pure, functional, deep
-learning programming languages like JAX.  Unfortunately I don't have
+Parallax is a prototype for a module system for JAX.  Unfortunately I don't have
 enough time to learn JAX, so this is my implementation of pure,
 immutable modules for PyTorch.
 
