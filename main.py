@@ -1,21 +1,3 @@
-# Parallax
-
-
-<img src="https://developers.google.com/web/updates/images/2016/12/performant-parallaxing/parallax.jpg">
-
-A module-system for an imaginary language.
-
-Parallax is a prototype for a module system for a pure, functional, deep
-learning programming languages like JAX.  Unfortunately I don't have
-enough time to learn JAX, so this is my implementation of pure,
-immutable modules for PyTorch.
-
-Why you would want immutable modules for PyTorch? No idea. They are
-pretty concise though, they make randomness and effects, and they are
-explicitly typed.
-
-
-```python
 from parallax import module, Module, Parameter
 import torch
 import torch.nn.init as init
@@ -123,5 +105,3 @@ for i in range(10):
 
     # Grad Update -> tree-shaped
     new_layer = layer.update(lambda a, b: a + b, grad)
-
-```
