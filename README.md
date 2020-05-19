@@ -30,7 +30,7 @@ class Dense(Module):
     weight : Parameter
     bias : Parameter
 
-    # Setup is creates shapes and binds init methods.
+    # Setup replace __init__ and creates shapes and binds lazy initializers.
     @staticmethod
     def setup(in_size, out_size):
         return Dense.init(
@@ -39,16 +39,17 @@ class Dense(Module):
             bias = Parameter.setup((out_size,),
                                    init.normal_))
 
-    # Forward is associated with parameters
+    # Forward is just like standard pytorch. 
     def forward(self, input):
         return self.weight @ input + self.bias
 
+    # Hook for pretty printing
     def extra_repr(self):
         return "%d, %d"%(self.weight.shape[1], self.weight.shape[0])
 
 @module
 class Dropout(Module):
-    # Other constants allowed.
+    # Arbitrary constants allowed.
     rate : float
 
     @staticmethod
