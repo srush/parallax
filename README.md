@@ -60,6 +60,8 @@ class Dropout(Module):
 
         # Pretend torch is pure.
         torch.random.set_rng_state(self.rng)
+        
+        # JAX should have a shared functional library for different modules.
         out = torch.nn.functional.dropout(input, p=self.rate, training=(self.mode == "train"))
         return out
 
