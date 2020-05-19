@@ -124,5 +124,5 @@ for i in range(10):
     grad = mock_grad()
 
     # Grad Update -> tree-shaped
-    new_layer = layer.update(lambda a, b: a + b, grad)
+    layer = layer.update(lambda a, b: a + b, grad)
 ```
