@@ -10,7 +10,7 @@ class Dense(Module):
     weight : Parameter
     bias : Parameter
 
-    # Setup is creates shapes and binds init methods.
+    # Setup replace __init__ and creates shapes and binds lazy initializers.
     @staticmethod
     def setup(in_size, out_size):
         return Dense.init(
@@ -19,27 +19,29 @@ class Dense(Module):
             bias = Parameter.setup((out_size,),
                                    init.normal_))
 
-    # Forward is associated with parameters
+    # Forward is just like standard pytorch.
     def forward(self, input):
         return self.weight @ input + self.bias
 
+    # Hook for pretty printing
     def extra_repr(self):
         return "%d, %d"%(self.weight.shape[1], self.weight.shape[0])
 
 @module
 class Dropout(Module):
-    # Other constants allowed.
+    # Arbitrary constants allowed.
     rate : float
-
-    @staticmethod
-    def setup(rate):
-        return Dropout.init(rate = rate)
 
     def forward(self, input):
         # RNG state is use-once or split. Attached to tree.
+        state = self.rng
+
+        # Pretend torch is pure.
         torch.random.set_rng_state(self.rng)
-        return torch.nn.functional.dropout(input, p=self.rate,
-                                           training=self.mode == "train")
+        out = torch.nn.functional.dropout(input, p=self.rate,
+                                          training=self.mode == "train")
+        #
+        return out
 
 @module
 class BinaryNetwork(Module):
@@ -75,19 +77,13 @@ class BinaryNetwork(Module):
         return torch.sigmoid(self.dense3(
                torch.tanh(x)))
 
-
 # Setup paramm tree -> declarative, immutable
 layer = BinaryNetwork.setup(5, 10)
-
 print(layer)
-assert(layer.dense1.weight.shape == (10, 5))
-
 
 # Initialize parameters -> stateful, hidden
 rng = torch.random.get_rng_state()
 layer = layer.initialize(rng)
-
-assert(layer.dense1.weight.shape == (10, 5))
 print(layer)
 
 for i in range(10):

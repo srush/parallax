@@ -56,6 +56,11 @@ class Module:
     def init(cls, **kwargs):
         return cls(**kwargs, _initialized=False, mode="train", rng=None,)
 
+    @classmethod
+    def setup(cls, **kwargs):
+        return cls.init(**kwargs)
+
+
     def split(self, num_splits):
         rngs = random_split(self.rng, num_splits)
         return [replace(self, rng=p_rng) for p_rng in rngs]

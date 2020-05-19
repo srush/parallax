@@ -16,6 +16,12 @@ stronger types.
 
 (Honestly though, I just want someone on the internet to port this to JAX for me.)
 
+Main ideas:
+
+* Make param modules immutable utilizing dataclasses and simple map / folds.
+* Replace imperative init with lazy `setup` function.
+* Avoid tracking state for most applications by first distributing seeds / globals through tree.
+* Force users to explicitly `split` params if they need sharing / recurrence.
 
 ```python
 from parallax import module, Module, Parameter
@@ -39,7 +45,7 @@ class Dense(Module):
             bias = Parameter.setup((out_size,),
                                    init.normal_))
 
-    # Forward is just like standard pytorch. 
+    # Forward is just like standard pytorch.
     def forward(self, input):
         return self.weight @ input + self.bias
 
@@ -52,15 +58,16 @@ class Dropout(Module):
     # Arbitrary constants allowed.
     rate : float
 
-    @staticmethod
-    def setup(rate):
-        return Dropout.init(rate = rate)
-
     def forward(self, input):
         # RNG state is use-once or split. Attached to tree.
+        state = self.rng
+
+        # Pretend torch is pure.
         torch.random.set_rng_state(self.rng)
-        return torch.nn.functional.dropout(input, p=self.rate,
-                                           training=self.mode == "train")
+        out = torch.nn.functional.dropout(input, p=self.rate,
+                                          training=self.mode == "train")
+        #
+        return out
 
 @module
 class BinaryNetwork(Module):
@@ -96,19 +103,13 @@ class BinaryNetwork(Module):
         return torch.sigmoid(self.dense3(
                torch.tanh(x)))
 
-
 # Setup paramm tree -> declarative, immutable
 layer = BinaryNetwork.setup(5, 10)
-
 print(layer)
-assert(layer.dense1.weight.shape == (10, 5))
-
 
 # Initialize parameters -> stateful, hidden
 rng = torch.random.get_rng_state()
 layer = layer.initialize(rng)
-
-assert(layer.dense1.weight.shape == (10, 5))
 print(layer)
 
 for i in range(10):
@@ -126,5 +127,4 @@ for i in range(10):
 
     # Grad Update -> tree-shaped
     new_layer = layer.update(lambda a, b: a + b, grad)
-
 ```
