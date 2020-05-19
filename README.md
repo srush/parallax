@@ -1,6 +1,6 @@
-# Parallax
+# Parallax - Pure modules with less magic
 
-A pure module-system for a deep imaginary language.
+A pure module system for a deep imaginary language.
 
 
 <img width=450px src="https://developers.google.com/web/updates/images/2016/12/performant-parallaxing/parallax.jpg">
