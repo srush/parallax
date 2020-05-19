@@ -3,7 +3,7 @@
 A module-system for an imaginary language.
 
 
-<img width=350px src="https://developers.google.com/web/updates/images/2016/12/performant-parallaxing/parallax.jpg">
+<img width=450px src="https://developers.google.com/web/updates/images/2016/12/performant-parallaxing/parallax.jpg">
 
 
 Parallax is a prototype for a module system for a pure, functional, deep
