@@ -32,16 +32,14 @@ class Dense(Module):
 
     # All parameter-holders are explicitly declared.
     weight : Parameter
-    bias : Parameter
+    bias   : Parameter
 
     # Setup replace __init__ and creates shapes and binds lazy initializers.
     @staticmethod
     def setup(in_size, out_size):
         return Dense.init(
-            weight = Parameter.setup((out_size, in_size),
-                                     init.xavier_normal_),
-            bias = Parameter.setup((out_size,),
-                                   init.normal_))
+            weight = Parameter.setup((out_size, in_size), init.xavier_normal_),
+            bias   = Parameter.setup((out_size,), init.normal_))
 
     # Forward is just like standard pytorch.
     def forward(self, input):
@@ -62,26 +60,24 @@ class Dropout(Module):
 
         # Pretend torch is pure.
         torch.random.set_rng_state(self.rng)
-        out = torch.nn.functional.dropout(input, p=self.rate,
-                                          training=self.mode == "train")
-        #
+        out = torch.nn.functional.dropout(input, p=self.rate, training=(self.mode == "train"))
         return out
 
 @module
 class BinaryNetwork(Module):
 
     # No difference between modules and parameters
-    dense1 : Dense
-    dense2 : Dense
-    dense3 : Dense
+    dense1  : Dense
+    dense2  : Dense
+    dense3  : Dense
     dropout : Dropout
 
     @staticmethod
     def setup(input_size, hidden_size):
         return BinaryNetwork.init(
-            dense1 = Dense.setup(input_size, hidden_size),
-            dense2 = Dense.setup(hidden_size, hidden_size),
-            dense3 = Dense.setup(hidden_size, 1),
+            dense1  = Dense.setup(input_size, hidden_size),
+            dense2  = Dense.setup(hidden_size, hidden_size),
+            dense3  = Dense.setup(hidden_size, 1),
             dropout = Dropout.setup(rate=0.2)
         )
 
@@ -98,8 +94,7 @@ class BinaryNetwork(Module):
         x = torch.tanh(dense2_a(x))
         x = torch.tanh(dense2_b(x))
 
-        return torch.sigmoid(self.dense3(
-               torch.tanh(x)))
+        return torch.sigmoid(self.dense3(torch.tanh(x)))
 
 # Setup paramm tree -> declarative, immutable
 layer = BinaryNetwork.setup(5, 10)
