@@ -16,7 +16,7 @@ stronger types. (Honestly though, I just want someone on the internet to port th
 
 Main ideas:
 
-* Make param modules immutable utilizing dataclasses and simple map / folds.
+* Make param modules immutable trees by utilizing dataclasses and lots of map / folds.
 * Replace imperative init with lazy `setup` function.
 * Avoid tracking state for most applications by first distributing seeds / globals through tree.
 * Force users to explicitly `split` params if they need sharing / recurrence.
