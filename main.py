@@ -83,7 +83,7 @@ for i in range(10):
     # Thread state through parameters -> functor, hidden
     rng = torch.random.get_rng_state()
     layer = layer.reset(rng, mode="train")
-
+    
     # Jax style grad compute -> tree-shaped immutable
     x = torch.zeros(5, requires_grad=True)
     def mock_grad():
@@ -91,7 +91,6 @@ for i in range(10):
         out.backward()
         return layer.grad()
     grad = mock_grad()
-
+    
     # Grad Update -> tree-shaped
     layer = layer.update(lambda a, b: a + b, grad)
-    break

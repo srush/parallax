@@ -153,6 +153,7 @@ class Module:
         d  = self._base()
         d.copy(rng = None)
         for p in self._parameters:
+            assert self.__dict__[p].grad is not None
             d = d.copy(**{p: self.__dict__[p].grad})
 
         for m in self._modules:
@@ -163,7 +164,10 @@ class Module:
         d  = self._base()
         d.copy(rng = None)
         for p in self._parameters:
-            d = d.copy(**{p: fn(self.__dict__[p], other.__dict__[p])})
+            d = d.copy(**{p: torch.tensor(fn(self.__dict__[p], other.__dict__[p]),
+                                          requires_grad=True
+            )}
+            )
 
         for m in self._modules:
             d = d.copy(**{m: self.__dict__[m].update(fn, other.__dict__[m])})
