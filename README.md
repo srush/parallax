@@ -22,24 +22,21 @@ Main ideas:
 * Force users to explicitly `split` params if they need sharing / recurrence.
 
 ```python
-from parallax import module, Module, Parameter
+
+from parallax import Module, Parameter
 import torch
 import torch.nn.init as init
 
-# Everything is immutable @module =  dataclass(frozen=True, repr=False)
-@module
 class Dense(Module):
-
     # All parameter-holders are explicitly declared.
     weight : Parameter
-    bias   : Parameter
+    bias : Parameter
 
     # Setup replace __init__ and creates shapes and binds lazy initializers.
-    @staticmethod
-    def setup(in_size, out_size):
-        return Dense.init(
-            weight = Parameter.setup((out_size, in_size), init.xavier_normal_),
-            bias   = Parameter.setup((out_size,), init.normal_))
+    def __init__(self, in_size, out_size):
+        super().__init__()
+        self.weight = Parameter((out_size, in_size), init.xavier_normal_)
+        self.bias = Parameter((out_size,), init.normal_)
 
     # Forward is just like standard pytorch.
     def forward(self, input):
@@ -49,10 +46,12 @@ class Dense(Module):
     def extra_repr(self):
         return "%d, %d"%(self.weight.shape[1], self.weight.shape[0])
 
-@module
 class Dropout(Module):
     # Arbitrary constants allowed.
     rate : float
+    def __init__(self, rate):
+        super().__init__()
+        self.rate = rate
 
     def forward(self, input):
         # RNG state is use-once or split. Attached to tree.
@@ -60,28 +59,25 @@ class Dropout(Module):
 
         # Pretend torch is pure.
         torch.random.set_rng_state(self.rng)
-        
-        # JAX should have a shared functional library for different modules.
-        out = torch.nn.functional.dropout(input, p=self.rate, training=(self.mode == "train"))
+        out = torch.nn.functional.dropout(input, p=self.rate,
+                                          training=self.mode == "train")
+        #
         return out
 
-@module
 class BinaryNetwork(Module):
 
     # No difference between modules and parameters
-    dense1  : Dense
-    dense2  : Dense
-    dense3  : Dense
+    dense1 : Dense
+    dense2 : Dense
+    dense3 : Dense
     dropout : Dropout
 
-    @staticmethod
-    def setup(input_size, hidden_size):
-        return BinaryNetwork.init(
-            dense1  = Dense.setup(input_size, hidden_size),
-            dense2  = Dense.setup(hidden_size, hidden_size),
-            dense3  = Dense.setup(hidden_size, 1),
-            dropout = Dropout.setup(rate=0.2)
-        )
+    def __init__(self, input_size, hidden_size):
+        super().__init__()
+        self.dense1 = Dense(input_size, hidden_size)
+        self.dense2 = Dense(hidden_size, hidden_size)
+        self.dense3 = Dense(hidden_size, 1)
+        self.dropout = Dropout(0.2)
 
     def forward(self, input):
 
@@ -96,10 +92,11 @@ class BinaryNetwork(Module):
         x = torch.tanh(dense2_a(x))
         x = torch.tanh(dense2_b(x))
 
-        return torch.sigmoid(self.dense3(torch.tanh(x)))
+        return torch.sigmoid(self.dense3(
+               torch.tanh(x)))
 
 # Setup paramm tree -> declarative, immutable
-layer = BinaryNetwork.setup(5, 10)
+layer = BinaryNetwork(5, 10)
 print(layer)
 
 # Initialize parameters -> stateful, hidden
@@ -110,7 +107,7 @@ print(layer)
 for i in range(10):
     # Thread state through parameters -> functor, hidden
     rng = torch.random.get_rng_state()
-    layer = layer.init_state(rng, mode="train")
+    layer = layer.reset(rng, mode="train")
 
     # Jax style grad compute -> tree-shaped immutable
     x = torch.zeros(5, requires_grad=True)

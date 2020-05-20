@@ -131,7 +131,7 @@ class Module:
 
         return self.__class__.make(**d)
 
-    def init_state(self, rng, mode=None):
+    def reset(self, rng, mode=None):
         d  = self._base()
         d = d.copy(rng = rng,
                    mode = mode if mode is not None else self.mode)
@@ -146,7 +146,7 @@ class Module:
             d = d.copy(**{p: q})
         splits = random_split(rng, len(self._modules))
         for m, p_rng in zip(self._modules, splits):
-            d = d.copy(**{m: self.__dict__[m].init_state(p_rng, mode)})
+            d = d.copy(**{m: self.__dict__[m].reset(p_rng, mode)})
         return self.__class__.make(**d)
 
     def grad(self):

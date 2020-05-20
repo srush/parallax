@@ -2,7 +2,6 @@ from parallax import Module, Parameter
 import torch
 import torch.nn.init as init
 
-
 class Dense(Module):
     # All parameter-holders are explicitly declared.
     weight : Parameter
@@ -83,7 +82,7 @@ print(layer)
 for i in range(10):
     # Thread state through parameters -> functor, hidden
     rng = torch.random.get_rng_state()
-    layer = layer.init_state(rng, mode="train")
+    layer = layer.reset(rng, mode="train")
 
     # Jax style grad compute -> tree-shaped immutable
     x = torch.zeros(5, requires_grad=True)
@@ -94,4 +93,5 @@ for i in range(10):
     grad = mock_grad()
 
     # Grad Update -> tree-shaped
-    new_layer = layer.update(lambda a, b: a + b, grad)
+    layer = layer.update(lambda a, b: a + b, grad)
+    break
