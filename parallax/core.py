@@ -164,9 +164,8 @@ class Module:
         d  = self._base()
         d.copy(rng = None)
         for p in self._parameters:
-            d = d.copy(**{p: torch.tensor(fn(self.__dict__[p], other.__dict__[p]),
-                                          requires_grad=True
-            )}
+            d = d.copy(**{p: fn(self.__dict__[p], other.__dict__[p]).clone().detach().requires_grad_(True)
+            }
             )
 
         for m in self._modules:
