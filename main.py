@@ -1,23 +1,18 @@
-from parallax import module, Module, Parameter
+from parallax import Module, Parameter
 import torch
 import torch.nn.init as init
 
-# Everything is immutable @module =  dataclass(frozen=True, repr=False)
-@module
-class Dense(Module):
 
+class Dense(Module):
     # All parameter-holders are explicitly declared.
     weight : Parameter
     bias : Parameter
 
     # Setup replace __init__ and creates shapes and binds lazy initializers.
-    @staticmethod
-    def setup(in_size, out_size):
-        return Dense.init(
-            weight = Parameter.setup((out_size, in_size),
-                                     init.xavier_normal_),
-            bias = Parameter.setup((out_size,),
-                                   init.normal_))
+    def __init__(self, in_size, out_size):
+        super().__init__()
+        self.weight = Parameter((out_size, in_size), init.xavier_normal_)
+        self.bias = Parameter((out_size,), init.normal_)
 
     # Forward is just like standard pytorch.
     def forward(self, input):
@@ -27,10 +22,12 @@ class Dense(Module):
     def extra_repr(self):
         return "%d, %d"%(self.weight.shape[1], self.weight.shape[0])
 
-@module
 class Dropout(Module):
     # Arbitrary constants allowed.
     rate : float
+    def __init__(self, rate):
+        super().__init__()
+        self.rate = rate
 
     def forward(self, input):
         # RNG state is use-once or split. Attached to tree.
@@ -43,7 +40,6 @@ class Dropout(Module):
         #
         return out
 
-@module
 class BinaryNetwork(Module):
 
     # No difference between modules and parameters
@@ -52,14 +48,12 @@ class BinaryNetwork(Module):
     dense3 : Dense
     dropout : Dropout
 
-    @staticmethod
-    def setup(input_size, hidden_size):
-        return BinaryNetwork.init(
-            dense1 = Dense.setup(input_size, hidden_size),
-            dense2 = Dense.setup(hidden_size, hidden_size),
-            dense3 = Dense.setup(hidden_size, 1),
-            dropout = Dropout.setup(rate=0.2)
-        )
+    def __init__(self, input_size, hidden_size):
+        super().__init__()
+        self.dense1 = Dense(input_size, hidden_size)
+        self.dense2 = Dense(hidden_size, hidden_size)
+        self.dense3 = Dense(hidden_size, 1)
+        self.dropout = Dropout(0.2)
 
     def forward(self, input):
 
@@ -78,7 +72,7 @@ class BinaryNetwork(Module):
                torch.tanh(x)))
 
 # Setup paramm tree -> declarative, immutable
-layer = BinaryNetwork.setup(5, 10)
+layer = BinaryNetwork(5, 10)
 print(layer)
 
 # Initialize parameters -> stateful, hidden

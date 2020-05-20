@@ -1,24 +1,21 @@
 import torch
-from dataclasses import dataclass, fields, field, replace
 from frozendict import frozendict
 from typing import Tuple, FrozenSet
-module = dataclass(frozen=True, repr=False)
 
 def random_split(seed, n_splits):
     "Split the random seed in n_parts (fake jax.random.split)"
     return [seed] * n_splits
 
-@module
 class Parameter:
     init : any
     data : torch.tensor
     _initialized: bool
 
-    @staticmethod
-    def setup(shape, init):
-        return Parameter(init=init, data=shape,
-                         _initialized=False)
-
+    def __init__(self, shape, init):
+        self.init = init
+        self.data = shape
+        self._initialized = False
+    
     def create(self, rng):
         torch.random.set_rng_state(rng)
 
@@ -35,22 +32,24 @@ class Parameter:
         else:
             return self.data
 
-module = dataclass(frozen=True, repr=False)
-
-@module
 class Module:
     _initialized: bool
     mode : str
     rng : float
-    _parameters : FrozenSet = field(init=False)
-    _modules : FrozenSet = field(init=False)
-    _constants : FrozenSet = field(init=False)
+    _parameters : FrozenSet
+    _modules : FrozenSet
+    _constants : FrozenSet
 
+    class ModField:
+        def __init__(self, name, type):
+            self.name = name
+            self.type = type
+            
     @classmethod
     def _user_fields(cls):
-        return [f for f in fields(cls)
-                if f.name not in ["_initialized", "mode", "rng",
-                                  "_parameters", "_modules", "_constants"] ]
+        return [cls.ModField(k, v) for k,v  in cls.__annotations__.items()
+                if k not in ["_initialized", "mode", "rng",
+                             "_parameters", "_modules", "_constants"] ]
 
     @classmethod
     def init(cls, **kwargs):
@@ -61,11 +60,28 @@ class Module:
         return cls.init(**kwargs)
 
 
+    @classmethod
+    def make(cls, **kwargs):
+        obj = cls.__new__(cls)
+        for k, v in kwargs.items():
+            obj.__dict__[k] = v
+        obj._make_modules()
+        return obj
+
+    def _replace(self, **kwargs):
+        obj = self.__class__.__new__(self.__class__)
+        for k, v in self.__dict__.items():
+            if k in kwargs:
+                obj.__dict__[k] = kwargs[k]
+            else:
+                obj.__dict__[k] = v
+        return obj
+    
     def split(self, num_splits):
         rngs = random_split(self.rng, num_splits)
-        return [replace(self, rng=p_rng) for p_rng in rngs]
+        return [self._replace(rng=p_rng) for p_rng in rngs]
 
-    def __post_init__(self):
+    def _make_modules(self):
         super().__setattr__('_modules',
                             frozenset([f.name
                                        for f in self._user_fields()
@@ -81,9 +97,15 @@ class Module:
                                        not issubclass(f.type, Module)
                             ]))
 
+    
+    def __init__(self):
+        self._initialized=False
+        self.mode="train"
+        self.rng=None
+        self._make_modules()
 
     def __getattr__(self, name):
-        if name in self._parameters:
+        if name in self.__dict__["_parameters"]:
             return self.__dict__[name].data
         return self.__dict__[name]
 
@@ -107,7 +129,7 @@ class Module:
         for m, p_rng in zip(self._modules, splits):
             d = d.copy(**{m:self.__dict__[m].initialize(p_rng)})
 
-        return self.__class__(**d)
+        return self.__class__.make(**d)
 
     def init_state(self, rng, mode=None):
         d  = self._base()
@@ -125,7 +147,7 @@ class Module:
         splits = random_split(rng, len(self._modules))
         for m, p_rng in zip(self._modules, splits):
             d = d.copy(**{m: self.__dict__[m].init_state(p_rng, mode)})
-        return self.__class__(**d)
+        return self.__class__.make(**d)
 
     def grad(self):
         d  = self._base()
@@ -135,7 +157,7 @@ class Module:
 
         for m in self._modules:
             d = d.copy(**{m: self.__dict__[m].grad()})
-        return self.__class__(**d)
+        return self.__class__.make(**d)
 
     def update(self, fn, other):
         d  = self._base()
@@ -146,7 +168,7 @@ class Module:
         for m in self._modules:
             d = d.copy(**{m: self.__dict__[m].update(fn, other.__dict__[m])})
 
-        return self.__class__(**d)
+        return self.__class__.make(**d)
 
     def __call__(self, *args):
         return self.forward(*args)
