@@ -1,4 +1,4 @@
-# Parallax - Immutable Modules for Pytorch and Friends
+# Parallax - Immutable PyTorch-esque Modules powered JAX
 
 A pure module system for an imaginary language.
 
@@ -6,27 +6,23 @@ A pure module system for an imaginary language.
 <img width=450px src="https://developers.google.com/web/updates/images/2016/12/performant-parallaxing/parallax.jpg">
 
 
-Parallax is a prototype for a module system for JAX.  Unfortunately I don't have
-enough time to learn JAX, so this is my implementation of pure,
-immutable modules for PyTorch.
+Parallax is a prototype for a module system for JAX.
 
 Why you would want immutable modules for PyTorch? Well they are
 pretty concise, they make randomness and effects explicit, and they have
-stronger types. (Honestly though, I just want someone on the internet to port this to JAX for me.)
+stronger types. (Honestly though, we just want someone on the internet to implement this nicely with JAX.)
 
 Main ideas:
 
 * Make param modules immutable trees by utilizing dataclasses and lots of map / folds.
 * Replace imperative init with lazy `setup` function.
 * Avoid tracking state for most applications by first distributing seeds / globals through tree.
-* Force users to explicitly `split` params if they need sharing / recurrence.
 
 ```python
 
-from parallax import Module, Parameter
-import torch
-import torch.nn.init as init
+from parallax import Module, Parameter, ParamInit
 
+@jax.tree_util.register_pytree_node_class
 class Dense(Module):
     # All parameter-holders are explicitly declared.
     weight : Parameter
@@ -34,9 +30,9 @@ class Dense(Module):
 
     # Setup replace __init__ and creates shapes and binds lazy initializers.
     def __init__(self, in_size, out_size):
+        self.weight = ParamInit((out_size, in_size), init.xavier_normal())
+        self.bias = ParamInit((out_size,), init.normal())
         super().__init__()
-        self.weight = Parameter((out_size, in_size), init.xavier_normal_)
-        self.bias = Parameter((out_size,), init.normal_)
 
     # Forward is just like standard pytorch.
     def forward(self, input):
@@ -46,6 +42,7 @@ class Dense(Module):
     def extra_repr(self):
         return "%d, %d"%(self.weight.shape[1], self.weight.shape[0])
 
+@jax.tree_util.register_pytree_node_class
 class Dropout(Module):
     # Arbitrary constants allowed.
     rate : float
@@ -57,13 +54,13 @@ class Dropout(Module):
         # RNG state is use-once or split. Attached to tree.
         state = self.rng
 
-        # Pretend torch is pure.
-        torch.random.set_rng_state(self.rng)
-        out = torch.nn.functional.dropout(input, p=self.rate,
-                                          training=self.mode == "train")
-        #
-        return out
+        if self.mode == "train":
+            keep = jax.random.bernoulli(state, self.rate, input.shape)
+            return jax.numpy.where(keep, input / self.rate, 0)
+        else:
+            return input
 
+@jax.tree_util.register_pytree_node_class
 class BinaryNetwork(Module):
 
     # No difference between modules and parameters
@@ -82,41 +79,42 @@ class BinaryNetwork(Module):
     def forward(self, input):
 
         # Standard usage works out of the box.
-        x = torch.tanh(self.dense1(input))
+        x = jax.numpy.tanh(self.dense1(input))
 
         # Stochastic modules (have random seed already)
         x = self.dropout(x)
 
-        # Shared params / recurrence requires split (like RNG)
-        dense2_a, dense2_b = self.dense2.split(2)
-        x = torch.tanh(dense2_a(x))
-        x = torch.tanh(dense2_b(x))
+        # Shared params / recurrence only requires split to change RNG
+        x = jax.numpy.tanh(self.dense2(x))
+        x = jax.numpy.tanh(self.dense2(x))
 
-        return torch.sigmoid(self.dense3(
-               torch.tanh(x)))
+        return jax.nn.sigmoid(self.dense3(jax.numpy.tanh(x)))[0]
 
-# Setup paramm tree -> declarative, immutable
+# Setup param tree -> declarative, immutable
 layer = BinaryNetwork(5, 10)
 print(layer)
+print(layer.dense1)
 
 # Initialize parameters -> stateful, hidden
-rng = torch.random.get_rng_state()
-layer = layer.initialize(rng)
+rng = jax.random.PRNGKey(0)
+layer = layer.initialized(rng)
 print(layer)
+print(layer.dense1)
 
+initial_loss = None
 for i in range(10):
     # Thread state through parameters -> functor, hidden
-    rng = torch.random.get_rng_state()
-    layer = layer.reset(rng, mode="train")
-
+    rng, iter_rng = jax.random.split(rng)
+    layer = layer.new_state(iter_rng, mode="train")
+    
     # Jax style grad compute -> tree-shaped immutable
-    x = torch.zeros(5, requires_grad=True)
-    def mock_grad():
-        out = layer.forward(x)
-        out.backward()
-        return layer.grad()
-    grad = mock_grad()
-
+    x = jax.numpy.zeros(5)
+    loss = layer(x)
+    if initial_loss is None:
+        initial_loss = loss
+    print(loss)
+    grad = layer.grad(x)
+    
     # Grad Update -> tree-shaped
-    layer = layer.update(lambda a, b: a + b, grad)
+    layer = jax.tree_util.tree_multimap(lambda p, g: p - 0.3 * g, layer, grad)
 ```
