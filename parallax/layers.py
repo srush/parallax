@@ -11,9 +11,9 @@ class Dense(Module):
 
     # Setup replace __init__ and creates shapes and binds lazy initializers.
     def __init__(self, in_size, out_size):
+        super().__init__()
         self.weight = ParamInit((out_size, in_size), init.xavier_normal())
         self.bias = ParamInit((out_size,), init.normal())
-        super().__init__()
 
     # Forward is just like standard pytorch.
     def forward(self, input):

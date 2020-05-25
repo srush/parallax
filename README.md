@@ -1,21 +1,15 @@
-# Parallax - Immutable PyTorch-esque Modules powered JAX
-
-A pure module system for an imaginary language.
+# Parallax - Immutable Torch Modules for JAX
 
 
 <img width=450px src="https://developers.google.com/web/updates/images/2016/12/performant-parallaxing/parallax.jpg">
 
 
-Parallax is a prototype for a module system for JAX.
-
-Why you would want immutable modules for PyTorch? Well they are
-pretty concise, they make randomness and effects explicit, and they have
-stronger types. (Honestly though, we just want someone on the internet to implement this nicely with JAX.)
+Parallax is a prototype for a pure module system for JAX implemented by Sabrina Mielke (@sjmielke) and Sasha Rush (@srush).
 
 Main ideas:
 
-* Make param modules immutable trees by utilizing dataclasses and lots of map / folds.
-* Replace imperative init with lazy `setup` function.
+* Make param modules immutable trees.
+* Replace all imperative style coding and init.
 * Avoid tracking state for most applications by first distributing seeds / globals through tree.
 
 ```python
@@ -29,9 +23,10 @@ class Dense(Module):
 
     # Setup replace __init__ and creates shapes and binds lazy initializers.
     def __init__(self, in_size, out_size):
+        super().__init__()
         self.weight = ParamInit((out_size, in_size), init.xavier_normal())
         self.bias = ParamInit((out_size,), init.normal())
-        super().__init__()
+
 
     # Forward is just like standard pytorch.
     def forward(self, input):
@@ -59,7 +54,6 @@ class Dropout(Module):
             return input
 
 class BinaryNetwork(Module):
-
     # No difference between modules and parameters
     dense1 : Dense
     dense2 : Dense
