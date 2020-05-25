@@ -341,13 +341,13 @@ class ModuleTuple:
 
 
 class OptState:
-    def __init__(self, state, _get_params, _update):
+    def __init__(self, state, _update, _get_params):
         self.state = state
         self._get_params = _get_params
         self._update = _update
 
     def updated(self, grad):
-        return OptState(self.state, self._get_params, self._update)
+        return OptState(self.state, self._update, self._get_params)
 
     def get(self):
         return self._get_params(self.state)
