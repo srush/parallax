@@ -9,5 +9,6 @@ setup(
         "parallax",
     ],
     package_data={"parallax": []},
-    url="https://github.com/srus/parallax"
+    url="https://github.com/srus/parallax",
+    install_requires=["jax", "jaxlib", "frozendict"]
 )
