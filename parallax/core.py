@@ -54,8 +54,8 @@ class ParameterTuple:
                 aux.append((len(l), a))
             else:
                 leaves.append(p)
-                aux.append(None)           
-        return leaves, aux 
+                aux.append(None)
+        return leaves, aux
 
     @classmethod
     def tree_unflatten(cls, aux, leaves):
@@ -111,7 +111,7 @@ class Module:
     def __init_subclass__(cls, **kwargs):
         super().__init_subclass__(**kwargs)
         jax.tree_util.register_pytree_node_class(cls)
-            
+
     @classmethod
     def _user_fields(cls):
         return sorted([
@@ -323,7 +323,7 @@ class ModuleTuple:
         for m in self.modules:
             l, a = m.tree_flatten()
             leaves += l
-            aux.append((m.__class__, len(l), a))         
+            aux.append((m.__class__, len(l), a))
         return leaves, aux
 
     @classmethod
@@ -338,3 +338,24 @@ class ModuleTuple:
             i += nleaves
         assert i == len(leaves)
         return cls(modules)
+
+
+class OptState:
+    def __init__(self, state, _get_params, _update):
+        self.state = state
+        self._get_params = _get_params
+        self._update = _update
+
+    def updated(self, grad):
+        return OptState(self.state, self._get_params, self._update)
+
+    def get(self):
+        return self._get_params(self.state)
+
+class Optimizer:
+    def __init__(self, hooks):
+        self._hooks = hooks
+
+    def initialized(self, module, rng):
+        return OptState(self._hooks[0](module.initialized(rng)),
+                        self._hooks[1], self._hooks[2])
