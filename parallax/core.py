@@ -339,7 +339,7 @@ class ModuleTuple:
         assert i == len(leaves)
         return cls(modules)
 
-
+@jax.tree_util.register_pytree_node_class
 class OptState:
     def __init__(self, state, _update, _get_params):
         self.state = state
@@ -352,6 +352,16 @@ class OptState:
     def get(self):
         return self._get_params(self.state)
 
+    def tree_flatten(self):
+        aux = [self._update, self._get_params]
+        leaves = [state]
+        return leaves, aux
+
+    @classmethod
+    def tree_unflatten(cls, aux, leaves):
+        return cls(leaves[0], aux[0], aux[1])
+
+    
 class Optimizer:
     def __init__(self, hooks):
         self._hooks = hooks
