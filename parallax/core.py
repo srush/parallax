@@ -1,74 +1,131 @@
-import torch
+import itertools
+from collections import namedtuple
+from dataclasses import dataclass
+from typing import Any, Union, Tuple
+
 from frozendict import frozendict
-from typing import Tuple, FrozenSet
+import jax
 
-def random_split(seed, n_splits):
-    "Split the random seed in n_parts (fake jax.random.split)"
-    return [seed] * n_splits
 
-class Parameter:
-    init : any
-    data : torch.tensor
-    _initialized: bool
+class ParamInit:
+    initializer : Any  # function (rng, shape) |-> tensor
+    shape : Tuple[int]
 
-    def __init__(self, shape, init):
-        self.init = init
-        self.data = shape
-        self._initialized = False
-    
-    def create(self, rng):
-        torch.random.set_rng_state(rng)
+    def __init__(self, shape, initializer):
+        self.shape = shape
+        self.initializer = initializer
 
-        # This would be pure.
-        data = torch.zeros(self.data, requires_grad=True)
-        self.init(data)
-        #
-        return data
+    def instantiate(self, rng):
+        """Returns a tensor created according to this init."""
+        return self.initializer(key=rng, shape=self.shape)
 
-    @property
-    def shape(self):
-        if self._initialized:
-            return self.data.shape
-        else:
-            return self.data
+    def __repr__(self):
+        return "ParamInit(" + ", ".join([str(d) for d in self.shape]) + ")"
 
+
+Parameter = Union[ParamInit, jax.interpreters.xla.DeviceArray]
+
+
+@jax.tree_util.register_pytree_node_class
+@dataclass
+class ParameterTuple:
+    parameters : Tuple[Parameter]
+
+    def __init__(self, parameters):
+        self.parameters = tuple(parameters)
+
+    def instantiate(self, rng):
+        rngs = jax.random.split(rng, len(self.parameters))
+        return ParameterTuple(p.instantiate(rng) for p, rng in zip(self.parameters, rngs))
+
+    def __repr__(self):
+        return "ParameterTuple(" + ", ".join([repr(p) for p in self.parameters]) + ")"
+
+    def __iter__(self):
+        return self.parameters.__iter__()
+
+    def tree_flatten(self):
+        aux = [self.__class__]
+        leaves = []
+        for p in self.parameters:
+            if isinstance(p, ParameterTuple):
+                l, a = p.tree_flatten()
+                leaves += l
+                aux.append((len(l), a))
+            else:
+                leaves.append(p)
+                aux.append(None)           
+        return leaves, aux 
+
+    @classmethod
+    def tree_unflatten(cls, aux, leaves):
+        parameters = []
+        i = 0
+        for p in aux[1:]:
+            if p is None:
+                parameters.append(leaves[i])
+                i += 1
+            else:
+                nleaves, a = p
+                parameters.append(
+                    cls.tree_unflatten(a, leaves[i:i+nleaves])
+                )
+                i += nleaves
+        assert i == len(leaves)
+        return cls(parameters)
+
+
+def _recursive_all_annotations(cls):
+    d = frozendict()
+    for c in cls.__mro__[::-1]:
+        if "__annotations__" in c.__dict__:
+            d = d.copy(**c.__annotations__)
+    return d
+
+
+@jax.tree_util.register_pytree_node_class
 class Module:
-    _initialized: bool
+    _is_initialized: bool = False
     mode : str
-    rng : float
-    _parameters : FrozenSet
-    _modules : FrozenSet
-    _constants : FrozenSet
+    rng : jax.interpreters.xla.DeviceArray
+    _parameters : Tuple[Union[Parameter, ParameterTuple]]
+    _modules : Tuple[Union["Module", "ModuleTuple"]]  # apparently that's the best we can do for recursive types :(
+    _constants : Tuple[Any]
 
-    class ModField:
-        def __init__(self, name, type):
-            self.name = name
-            self.type = type
-            
+    ModField = namedtuple("ModField", ["name", "type"])
+
+    def __init__(self):
+        self._is_initialized = False
+        self.mode = "train"
+        self.rng = None
+        self._register_fields()
+
+    def __setattr__(self, name, value):
+        if self._is_initialized:
+            raise Exception(f"Can't set {name}, class is already initialized!")
+        elif name not in _recursive_all_annotations(self.__class__).keys():
+            raise Exception(f"Field {name} was not declared in {self.__class__} or ancestors!")
+        else:
+            self.__dict__[name] = value
+
     @classmethod
     def _user_fields(cls):
-        return [cls.ModField(k, v) for k,v  in cls.__annotations__.items()
-                if k not in ["_initialized", "mode", "rng",
-                             "_parameters", "_modules", "_constants"] ]
+        return sorted([
+            cls.ModField(k, v)
+            for k, v in _recursive_all_annotations(cls).items()
+            if k not in ["_is_initialized", "mode", "rng", "_parameters",
+                         "_modules", "_constants"]
+        ], key=lambda f: f.name)
 
     @classmethod
-    def init(cls, **kwargs):
-        return cls(**kwargs, _initialized=False, mode="train", rng=None,)
-
-    @classmethod
-    def setup(cls, **kwargs):
-        return cls.init(**kwargs)
-
-
-    @classmethod
-    def make(cls, **kwargs):
+    def _new_from(cls, **kwargs):
         obj = cls.__new__(cls)
         for k, v in kwargs.items():
             obj.__dict__[k] = v
-        obj._make_modules()
+        obj._register_fields()
         return obj
 
-    def _replace(self, **kwargs):
+    def _updated_with(self, **kwargs):
         obj = self.__class__.__new__(self.__class__)
         for k, v in self.__dict__.items():
             if k in kwargs:
@@ -76,105 +133,112 @@ class Module:
             else:
                 obj.__dict__[k] = v
         return obj
-    
-    def split(self, num_splits):
-        rngs = random_split(self.rng, num_splits)
-        return [self._replace(rng=p_rng) for p_rng in rngs]
 
-    def _make_modules(self):
+    def _register_fields(self):
         super().__setattr__('_modules',
-                            frozenset([f.name
-                                       for f in self._user_fields()
-                                       if issubclass(f.type, Module)]))
+                            tuple([f.name
+                                   for f in self._user_fields()
+                                   if not f.type == Parameter and
+                                   not issubclass(f.type, ParameterTuple) and
+                                   (issubclass(f.type, ModuleTuple) or
+                                    issubclass(f.type, Module))]))
         super().__setattr__('_parameters',
-                            frozenset([f.name
-                                       for f in self._user_fields()
-                                       if issubclass(f.type, Parameter)]))
+                            tuple([f.name
+                                   for f in self._user_fields()
+                                   if f.type == Parameter or
+                                   issubclass(f.type, ParameterTuple)]))
         super().__setattr__('_constants',
-                            frozenset([f.name
-                                       for f in self._user_fields()
-                                       if not issubclass(f.type, Parameter) and
-                                       not issubclass(f.type, Module)
+                            tuple([f.name
+                                   for f in self._user_fields()
+                                   if not f.type == Parameter and
+                                   not issubclass(f.type, ParameterTuple) and
+                                   not issubclass(f.type, ModuleTuple) and
+                                   not issubclass(f.type, Module)
                             ]))
 
-    
-    def __init__(self):
-        self._initialized=False
-        self.mode="train"
-        self.rng=None
-        self._make_modules()
-
-    def __getattr__(self, name):
-        if name in self.__dict__["_parameters"]:
-            return self.__dict__[name].data
-        return self.__dict__[name]
-
-    def _base(self):
-        d = frozendict({"_initialized" : self._initialized,
+    def _all_constants(self):
+        d = frozendict({"_is_initialized" : self._is_initialized,
                         "mode" : self.mode,
                         "rng" : self.rng})
         for c in self._constants:
             d = d.copy(**{c : self.__dict__[c]})
         return d
 
-    def initialize(self, rng):
-        d  = self._base()
-        d = d.copy(_initialized = True)
+    def split(self, num_splits):
+        rngs = jax.random.split(self.rng, num_splits)
+        return [self._updated_with(rng=rng) for rng in rngs]
 
-        splits = random_split(rng, len(self._parameters))
-        for p, p_rng in zip(self._parameters, splits):
-            d = d.copy(**{p : self.__dict__[p].create(p_rng)})
+    def initialized(self, rng):
+        d = self._all_constants().copy(_is_initialized = True)
+        rng_p, rng_m = jax.random.split(rng)
+        rngs = jax.random.split(rng_p, len(self._parameters))
+        for p, rng in zip(self._parameters, rngs):
+            assert isinstance(self.__dict__[p], ParamInit) or \
+                   isinstance(self.__dict__[p], ParameterTuple)
+            d = d.copy(**{p : self.__dict__[p].instantiate(rng)})
 
-        splits = random_split(rng, len(self._modules))
-        for m, p_rng in zip(self._modules, splits):
-            d = d.copy(**{m:self.__dict__[m].initialize(p_rng)})
+        rngs = jax.random.split(rng_m, len(self._modules))
+        for m, rng in zip(self._modules, rngs):
+            if isinstance(self.__dict__[m], Module):
+                assert not self.__dict__[m]._is_initialized
+            d = d.copy(**{m: self.__dict__[m].initialized(rng)})
 
-        return self.__class__.make(**d)
+        return self.__class__._new_from(**d)
 
-    def reset(self, rng, mode=None):
-        d  = self._base()
-        d = d.copy(rng = rng,
-                   mode = mode if mode is not None else self.mode)
-
-        for p in self._parameters:
-            q = self.__dict__[p]
-
-            # Update
-            if q.grad is not None:
-                q.grad.zero_()
-            #
-            d = d.copy(**{p: q})
-        splits = random_split(rng, len(self._modules))
-        for m, p_rng in zip(self._modules, splits):
-            d = d.copy(**{m: self.__dict__[m].reset(p_rng, mode)})
-        return self.__class__.make(**d)
-
-    def grad(self):
-        d  = self._base()
-        d.copy(rng = None)
-        for p in self._parameters:
-            assert self.__dict__[p].grad is not None
-            d = d.copy(**{p: self.__dict__[p].grad})
-
-        for m in self._modules:
-            d = d.copy(**{m: self.__dict__[m].grad()})
-        return self.__class__.make(**d)
-
-    def update(self, fn, other):
-        d  = self._base()
-        d.copy(rng = None)
-        for p in self._parameters:
-            d = d.copy(**{p: fn(self.__dict__[p], other.__dict__[p]).clone().detach().requires_grad_(True)
-            }
-            )
-
-        for m in self._modules:
-            d = d.copy(**{m: self.__dict__[m].update(fn, other.__dict__[m])})
-
-        return self.__class__.make(**d)
+    def new_state(self, rng, mode=None):
+        d = frozendict({"rng": rng, "mode": mode or self.mode})
+        rngs = jax.random.split(rng, len(self._modules))
+        for m, rng in zip(self._modules, rngs):
+            d = d.copy(**{m: self.__dict__[m].new_state(rng, mode)})
+        return self._updated_with(**d)
 
     def __call__(self, *args):
         return self.forward(*args)
+
+    def grad(self, input):
+        return jax.grad(self.__class__.forward)(self, input)
+
+    def tree_flatten(self):
+        flat_module_names = tuple(self._modules)
+        flat_modules = [self.__dict__[m].tree_flatten()
+                        for m in flat_module_names]
+        flat_parameter_names = tuple(self._parameters)
+        flat_parameters = [self.__dict__[p].tree_flatten()
+                           if isinstance(self.__dict__[p], ParameterTuple)
+                           else ([self.__dict__[p]], None)
+                           for p in flat_parameter_names]
+        leaves = tuple(itertools.chain(
+            *[leaves for (leaves, _) in flat_modules + flat_parameters],
+        ))
+        aux = (
+            self.__class__,
+            self._all_constants(),
+            [
+                (name, len(leaves), aux)
+                for name, (leaves, aux) in zip(
+                    flat_module_names + flat_parameter_names,
+                    flat_modules + flat_parameters
+                )
+            ],
+        )
+        return (leaves, aux)
+
+    @classmethod
+    def tree_unflatten(cls, aux, leaves):
+        _cls, d, aux_fields = aux
+        assert cls == _cls
+        i = 0
+        add_d = {}
+        for name, n_leaves, aux in aux_fields:
+            if aux is None:
+                assert n_leaves == 1
+                add_d[name] = leaves[i]
+            else:
+                add_d[name] = aux[0].tree_unflatten(aux, leaves[i:i+n_leaves])
+            i += n_leaves
+        assert i == len(leaves)
+        d = d.copy(**add_d)
+        return cls._new_from(**d)
 
     def modules(self):
         for f in self._modules:
@@ -212,7 +276,7 @@ class Module:
             child_lines.append('(' + key + '): ' + mod_str)
         lines = extra_lines + child_lines
 
-        main_str = self._get_name() + (" uninit " if not self._initialized else "") + '('
+        main_str = self._get_name() + (" uninit " if not self._is_initialized else "") + '('
         if lines:
             # simple one-liner info, which most builtin Modules will use
             if len(extra_lines) == 1 and not child_lines:
@@ -222,3 +286,51 @@ class Module:
 
         main_str += ')'
         return main_str
+
+
+@jax.tree_util.register_pytree_node_class
+@dataclass
+class ModuleTuple:
+    modules : Tuple[Module]
+
+    def __init__(self, modules):
+        self.modules = tuple(modules)
+
+    def initialized(self, rng):
+        rngs = jax.random.split(rng, len(self.modules))
+        return ModuleTuple(m.initialized(rng) for m, rng in zip(self.modules, rngs))
+
+    def new_state(self, rng, mode=None):
+        rngs = jax.random.split(rng, len(self.modules))
+        return ModuleTuple(
+            m.new_state(rng, mode)
+            for m, rng in zip(self.modules, rngs)
+        )
+
+    def __repr__(self):
+        return "ModuleTuple(" + ", ".join([repr(m) for m in self.modules]) + ")"
+
+    def __iter__(self):
+        return self.modules.__iter__()
+
+    def tree_flatten(self):
+        aux = [self.__class__]
+        leaves = []
+        for m in self.modules:
+            l, a = m.tree_flatten()
+            leaves += l
+            aux.append((m.__class__, len(l), a))         
+        return leaves, aux
+
+    @classmethod
+    def tree_unflatten(cls, aux, leaves):
+        modules = []
+        i = 0
+        for m in aux[1:]:
+            child_cls, nleaves, a = m
+            modules.append(
+                child_cls.tree_unflatten(a, leaves[i:i+nleaves])
+            )
+            i += nleaves
+        assert i == len(leaves)
+        return cls(modules)
