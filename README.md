@@ -22,7 +22,6 @@ Main ideas:
 
 from parallax import Module, Parameter, ParamInit
 
-@jax.tree_util.register_pytree_node_class
 class Dense(Module):
     # All parameter-holders are explicitly declared.
     weight : Parameter
@@ -42,7 +41,6 @@ class Dense(Module):
     def extra_repr(self):
         return "%d, %d"%(self.weight.shape[1], self.weight.shape[0])
 
-@jax.tree_util.register_pytree_node_class
 class Dropout(Module):
     # Arbitrary constants allowed.
     rate : float
@@ -60,7 +58,6 @@ class Dropout(Module):
         else:
             return input
 
-@jax.tree_util.register_pytree_node_class
 class BinaryNetwork(Module):
 
     # No difference between modules and parameters
