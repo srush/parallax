@@ -108,6 +108,10 @@ class Module:
         else:
             self.__dict__[name] = value
 
+    def __init_subclass__(cls, **kwargs):
+        super().__init_subclass__(**kwargs)
+        jax.tree_util.register_pytree_node_class(cls)
+            
     @classmethod
     def _user_fields(cls):
         return sorted([

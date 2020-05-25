@@ -4,7 +4,6 @@ import jax.nn.initializers as init
 from .core import *
 
 
-@jax.tree_util.register_pytree_node_class
 class Dense(Module):
     # All parameter-holders are explicitly declared.
     weight : Parameter
@@ -25,7 +24,6 @@ class Dense(Module):
         return "%d, %d"%(self.weight.shape[1], self.weight.shape[0])
 
 
-@jax.tree_util.register_pytree_node_class
 class Dropout(Module):
     # Arbitrary constants allowed.
     rate : float
@@ -44,7 +42,6 @@ class Dropout(Module):
             return input
 
 
-@jax.tree_util.register_pytree_node_class
 class BinaryNetwork(Module):
 
     # No difference between modules and parameters
@@ -75,7 +72,6 @@ class BinaryNetwork(Module):
         return jax.nn.sigmoid(self.dense3(jax.numpy.tanh(x)))[0]
 
 
-@jax.tree_util.register_pytree_node_class
 class LSTMCell(Module):
     weight_ih : Parameter
     linear_hh : Dense
@@ -97,7 +93,6 @@ class LSTMCell(Module):
         return (new_h, new_c)
 
 
-@jax.tree_util.register_pytree_node_class
 class MultiLayerLSTM(Module):
     # Dynamic number of parameters and modules
     cells : ModuleTuple
