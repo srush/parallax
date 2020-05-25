@@ -341,21 +341,28 @@ class ModuleTuple:
 
 
 class OptState:
-    def __init__(self, state, _update, _get_params):
+    def __init__(self, state, rng, _update, _get_params):
+        rngs = jax.random.split(rng)
         self.state = state
+        self.rng = rngs[0]
+        self._next_rng = rngs[1]
         self._get_params = _get_params
         self._update = _update
 
     def updated(self, i, grad):
-        return OptState(self._update(i, grad, self.state), self._update, self._get_params)
+        return OptState(self._update(i, grad, self.state),
+                        self._next_rng,
+                        self._update, self._get_params)
 
     def get(self):
-        return self._get_params(self.state)
+        return self._get_params(self.state).new_state(self.rng)
 
 class Optimizer:
     def __init__(self, hooks):
         self._hooks = hooks
 
     def initialized(self, module, rng):
-        return OptState(self._hooks[0](module.initialized(rng)),
+        rngs = jax.random.split(rng)
+        return OptState(self._hooks[0](module.initialized(rngs[0])),
+                        rngs[1],
                         self._hooks[1], self._hooks[2])
