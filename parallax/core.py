@@ -346,8 +346,8 @@ class OptState:
         self._get_params = _get_params
         self._update = _update
 
-    def updated(self, grad):
-        return OptState(self.state, self._update, self._get_params)
+    def updated(self, i, grad):
+        return OptState(self._update(i, grad, self.state), self._update, self._get_params)
 
     def get(self):
         return self._get_params(self.state)
