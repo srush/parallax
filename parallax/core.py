@@ -354,7 +354,7 @@ class OptState:
 
     def tree_flatten(self):
         aux = [self._update, self._get_params]
-        leaves = [state]
+        leaves = [self.state]
         return leaves, aux
 
     @classmethod
